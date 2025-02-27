@@ -1,0 +1,783 @@
+import dash
+from dash import Dash, dcc, html, Input, Output, State, callback
+import os
+import pandas as pd
+import base64
+import io
+import openpyxl
+import dash_daq as daq
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+import glob
+from utils.create_snirf import create_snirf
+import numpy as np
+import plotly.graph_objects as go
+
+# Create the Dash app
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+server = app.server
+
+app.layout = html.Div([
+    # Header Section
+    html.Div(
+        style={
+            'height': '40px',
+            'padding': '15px',
+            'background': '#cc4c0c',
+            'color': 'white',
+            'display': 'flex',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'fontSize': '30px',
+            'fontWeight': '100',
+            'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.2)',
+            'borderBottom': '5px solid #003f5c'
+        },
+        children=[
+            html.H1(
+                'FetalsenseM 1.5 Dashboard',
+                style={'margin': '0', 'margin-left': '10px'}
+            )
+        ]
+    ),
+    
+    # Flex container
+    html.Div([
+        # Left side (1/4th width)
+        html.Div([
+            # File Upload Section
+            html.Div([
+                html.H3('File Upload', style={
+                    'background': '#cc4c0c',  # New background color
+                    'padding': '12px',
+                    'textAlign': 'center',
+                    'color': '#ECF0F1',  # Lighter text color
+                    'fontWeight': 'bold',
+                    'fontSize': '38px',
+                    'borderRadius': '8px',
+                }),
+                dcc.Upload(
+                    id='upload-data',
+                    children=html.Div(['Drag and Drop or ', html.A('Select Files')]),
+                    style={
+                        'width': '95%',
+                        'height': '60px',
+                        'lineHeight': '60px',
+                        'borderWidth': '2px',
+                        'borderStyle': 'dashed',
+                        'borderRadius': '8px',
+                        'textAlign': 'center',
+                        'margin': '12px',
+                        'borderColor': '#3498DB',  # Updated border color
+                        'backgroundColor': '#ECF0F1',  # Light background
+                        'color': '#3498DB',  # Matching text color
+                        'fontSize': '18px',
+                        'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)',
+                    },
+                    multiple=False,
+                ),
+            ]),
+            html.Div(id='file-names'),
+            dcc.Store(id='store-file-path'),
+            html.Br(),
+            
+            # Download SNIRF Section
+            html.Div([
+                html.H3('Download SNIRF', style={
+                    'background': '#cc4c0c',
+                    'padding': '12px',
+                    'textAlign': 'center',
+                    'color': '#ECF0F1',
+                    'fontWeight': 'bold',
+                    'fontSize': '38px',
+                    'borderRadius': '8px',
+                }),
+                html.Button("Download Raw Data SNIRF", id="btn_rawdata_snirf", style={
+                    'width': '95%',
+                    'height': '60px',
+                    'lineHeight': '60px',
+                    'borderWidth': '2px',
+                    'borderStyle': 'dashed',
+                    'borderRadius': '8px',
+                    'textAlign': 'center',
+                    'margin': '12px',
+                    'borderColor': '#3498DB',
+                    'backgroundColor': '#ECF0F1',
+                    'color': '#3498DB',
+                    'fontSize': '18px',
+                    'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)',
+                    'transition': 'background-color 0.3s ease',
+                }),
+                dcc.Download(id="download-file-snirf"),
+            ]),
+            html.Br(),
+            
+            # View Intensities Section
+            html.Div([
+                html.H3('View Intensities', style={
+                    'background': '#cc4c0c',
+                    'padding': '12px',
+                    'textAlign': 'center',
+                    'color': '#ECF0F1',
+                    'fontWeight': 'bold',
+                    'fontSize': '38px',
+                    'borderRadius': '8px',
+                }),
+                html.Div([
+                    html.H4('Select one or more:', style={
+                        'textAlign': 'left',
+                        'fontSize': '24px',
+                        'marginBottom': '10px',
+                        'color': '#0a0a09',
+                        "font-weight": "100",
+                    }),
+                    dcc.Dropdown(
+                        id='intensities-options-dropdown',
+                        options=[{'label': option, 'value': option} for option in [
+                            'LED_A_784_DET1', 'LED_A_784_DET2', 'LED_A_784_DET3',
+                            'LED_A_800_DET1', 'LED_A_800_DET2', 'LED_A_800_DET3',
+                            'LED_A_818_DET1', 'LED_A_818_DET2', 'LED_A_818_DET3',
+                            'LED_A_835_DET1', 'LED_A_835_DET2', 'LED_A_835_DET3',
+                            'LED_A_851_DET1', 'LED_A_851_DET2', 'LED_A_851_DET3',
+                            'LED_A_881_DET1', 'LED_A_881_DET2', 'LED_A_881_DET3',
+                            'LED_A_DARK_DET1', 'LED_A_DARK_DET2', 'LED_A_DARK_DET3',
+                            'LED_B_784_DET1', 'LED_B_784_DET2', 'LED_B_784_DET3',
+                            'LED_B_800_DET1', 'LED_B_800_DET2', 'LED_B_800_DET3',
+                            'LED_B_818_DET1', 'LED_B_818_DET2', 'LED_B_818_DET3',
+                            'LED_B_835_DET1', 'LED_B_835_DET2', 'LED_B_835_DET3',
+                            'LED_B_851_DET1', 'LED_B_851_DET2', 'LED_B_851_DET3',
+                            'LED_B_881_DET1', 'LED_B_881_DET2', 'LED_B_881_DET3',
+                            'LED_B_DARK_DET1', 'LED_B_DARK_DET2', 'LED_B_DARK_DET3'
+                        ]],
+                        multi=True,
+                        value=[],
+                        style={'borderColor': '#3498DB', 'fontSize': '20px', 'borderRadius': '8px'}
+                    )
+                ]),
+                html.Div(id='intensity-selection-status', children='Select to view', style={
+                    'fontFamily': 'Courier New',
+                    'fontSize': '16px',
+                    'textAlign': 'center',
+                    'marginTop': '10px',
+                    'color': '#7F8C8D',
+                }),
+                html.Br(),
+                html.Div([
+                    html.H4('Select Groups', style={
+                        'textAlign': 'left',
+                        'fontSize': '24px',
+                        'marginBottom': '10px',
+                        'color': '#cc4c0c',
+                        "font-weight": "100",
+                    }),
+                    # Group A and Group B selectors placed side by side using flexbox
+                    html.Div([
+                        html.Div([
+                            html.H4('GroupA_Detector1', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupA_dect1_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginRight': '10px'}),
+                        
+                        html.Div([
+                            html.H4('GroupB_Detector1', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupB_dect1_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginLeft': '10px'})
+                    ], style={'display': 'flex', 'marginBottom': '10px'}),  # Flexbox for side-by-side
+
+                    html.Div([
+                        html.Div([
+                            html.H4('GroupA_Detector2', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupA_dect2_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginRight': '10px'}),
+                        
+                        html.Div([
+                            html.H4('GroupB_Detector2', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupB_dect2_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginLeft': '10px'})
+                    ], style={'display': 'flex', 'marginBottom': '10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.H4('GroupA_Detector3', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupA_dect3_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginRight': '10px'}),
+                        
+                        html.Div([
+                            html.H4('GroupB_Detector3', style={'fontSize': '20px', 'color': '#003f5c', "font-weight": "100"}),
+                            daq.BooleanSwitch(
+                                id='groupB_dect3_spectras',
+                                on=False,
+                                style={'transform': 'scale(1.1)'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'flex': '1', 'marginLeft': '10px'})
+                    ], style={'display': 'flex', 'marginBottom': '10px'}),
+                    html.Div([
+                        html.H4('Select All', style={'fontSize': '20px', 'color': '#cc4c0c', "font-weight": "100"}),
+                        daq.BooleanSwitch(
+                            id='select_all_switch',
+                            on=False,
+                            style={'transform': 'scale(1.1)', 'padding': '10px'}
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '10px'}),
+                    
+                ]),
+                dbc.Button('View Intensity Over Time ', id='view-graph-btn', color='primary', style={
+                    'padding': '12px', 'width': '100%', 'margin': '10px 0', 'fontSize': '20px', 'borderRadius': '8px', 'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)',
+                }),
+                html.Div(id='select-intensities', children='Select one or multiple groups', style={
+                    'fontFamily': 'Courier New',
+                    'fontSize': '16px',
+                    'textAlign': 'center',
+                    'marginTop': '10px',
+                    'color': '#7F8C8D',
+                }),
+                html.Br(),
+                
+                # Raw Data Quality Check
+                html.Div(children=[
+                    html.H3('Raw Data Quality Check', style={
+                        'background': '#cc4c0c',
+                        'padding': '12px',
+                        'textAlign': 'center',
+                        'color': '#ECF0F1',
+                        'fontWeight': 'bold',
+                        'fontSize': '38px',
+                        'borderRadius': '8px',
+                    }),
+                    dbc.Alert(
+                        html.Div([
+                            html.H4('Signal Noise Ratio',
+                                    style={'color': '#cc4c0c', 'marginLeft': '40px', 'textAlign': 'left', 'fontSize': '26px', 'fontWeight': 'lighter', 'display': 'inline-block', 'width': '45%'}),
+                            html.Button(
+                                '×', id='close-snr-alert', n_clicks=0,
+                                style={'background': 'none', 'border': 'none', 'color': '#3498DB', 'fontSize': '24px', 'cursor': 'pointer', 'float': 'right', 'marginTop': '-10px'}
+                            )
+                        ]),
+                        id='snr-alert',
+                        is_open=True,
+                        dismissable=True,
+                        style={'marginTop': '10px', 'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)'}
+                    ),
+                    dbc.Alert(
+                                            html.Div([
+                                                html.H4('Noise Equivalent Power',
+                                                        style={'color': '#003f5c', 'marginLeft': '40px',
+                                                               'textAlign': 'left', 'fontSize': '26px',
+                                                               'fontWeight': 'lighter', 'display': 'inline-block',
+                                                               'width': '75%'}),
+                                                html.Button(
+                                                    '×', id='close-nep-alert', n_clicks=0,
+                                                    style={
+                                                        'background': 'none',
+                                                        'border': 'none',
+                                                        'color': 'black',
+                                                        'fontSize': '24px',
+                                                        'cursor': 'pointer',
+                                                        'float': 'right',
+                                                        'marginTop': '-10px',
+                                                        'color': '#003f5c'
+                                                    }
+                                                )
+                                            ]),
+                                            id='nep-alert',
+                                            is_open=True,
+                                            dismissable=True,
+                                            style={
+                                                'marginTop': '10px', 'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.1)'}
+                                        ),
+                                        dbc.Alert(
+                                            html.Div([
+                                                html.H4('Dark distance',
+                                                        style={'color': '#003f5c', 'marginLeft': '40px',
+                                                               'textAlign': 'left', 'fontSize': '26px',
+                                                               'fontWeight': 'lighter', 'display': 'inline-block',
+                                                               'width': '45%'}),
+                                                html.Button(
+                                                    '×', id='close-dark-distance-alert', n_clicks=0,
+                                                    style={
+                                                        'background': 'none',
+                                                        'border': 'none',
+                                                        'color': 'black',
+                                                        'fontSize': '24px',
+                                                        'cursor': 'pointer',
+                                                        'float': 'right',
+                                                        'marginTop': '-10px',
+                                                        'color': '#003f5c'
+                                                    }
+                                                )
+                                            ]),
+                                            id='dark-alert',
+                                            is_open=True,
+                                            dismissable=True,
+                                            style={
+                                                'marginTop': '10px', 'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.1)'}
+                                        ),
+                                        dbc.Alert(
+                                            html.Div([
+                                                html.H4('Scatter Plot', style={'color': '#003f5c', 'marginLeft': '40px',
+                                                                               'color': '#003f5c', 'marginLeft': '40px',
+                                                                               'textAlign': 'left', 'fontSize': '26px',
+                                                                               'fontWeight': 'lighter',
+                                                                               'display': 'inline-block',
+                                                                               'width': '45%'}),
+                                                html.Button(
+                                                    '×', id='close-scatter-plot-alert', n_clicks=0,
+                                                    style={
+                                                        'background': 'none',
+                                                        'border': 'none',
+                                                        'color': 'black',
+                                                        'fontSize': '24px',
+                                                        'cursor': 'pointer',
+                                                        'float': 'right',
+                                                        'marginTop': '-10px'
+                                                    }
+                                                )
+                                            ]),
+                                            id='scatter-alert',
+                                            is_open=True,
+                                            dismissable=True,
+                                            style={
+                                                'marginTop': '10px', 'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.1)'}
+                                        ),
+                                        dbc.Alert(
+                                            html.Div([
+                                                html.H4('Distance from dark',
+                                                        style={'color': '#003f5c', 'marginLeft': '40px',
+                                                               'color': '#003f5c', 'marginLeft': '40px',
+                                                               'textAlign': 'left', 'fontSize': '26px',
+                                                               'fontWeight': 'lighter', 'display': 'inline-block',
+                                                               'width': '75%'}),
+                                                html.Button(
+                                                    '×', id='close-distance-dark-alert', n_clicks=0,
+                                                    style={
+                                                        'background': 'none',
+                                                        'border': 'none',
+                                                        'color': 'black',
+                                                        'fontSize': '24px',
+                                                        'cursor': 'pointer',
+                                                        'float': 'right',
+                                                        'marginTop': '-10px'
+                                                    }
+                                                )
+                                            ]),
+                                            id='distance-alert',
+                                            is_open=True,
+                                            dismissable=True,
+                                            style={
+                                                'marginTop': '10px', 'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.1)'}
+                                        ),
+                    dbc.Button('Check Raw Data Quality', id='check-data-quality-btn', color='primary', style={
+                        'padding': '12px', 'width': '100%', 'margin': '10px 0', 'fontSize': '20px', 'borderRadius': '8px', 'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)',
+                    }),
+                ])
+            ])
+        ], style={'width': '25%', 'height': '100vh', 'padding': '10px', 'boxSizing': 'border-box', 'borderRight': '2px solid #3498DB'}),
+
+        # Right side (3/4th width)
+        html.Div([
+            html.H3('Plot Section', style={
+                'background': '#cc4c0c',
+                'padding': '12px',
+                'textAlign': 'center',
+                'color': '#ECF0F1',
+                'fontWeight': 'bold',
+                'fontSize': '38px',
+                'borderRadius': '8px',
+            }),
+            dcc.Tabs(id='tabs', children=[
+                dcc.Tab(label='Intensity vs Time', children=[
+                    html.Div(id='intensity-time-plot'),
+                ]),
+            ]),
+        ], style={'width': '75%', 'height': '100vh', 'padding': '10px', 'boxSizing': 'border-box', 'borderLeft': '2px solid #3498DB'})
+    ], style={'display': 'flex', 'height': '100vh'}),
+])
+
+
+def read_group_data(filepath):
+    try:
+        # Use pandas to read the Excel file
+        data = pd.read_excel(filepath, engine="openpyxl")
+        data_df = pd.DataFrame(data)
+        # Extract the data starting from row 9
+        data = data_df.iloc[9:, :]
+        data.columns = ['Time', 'System Time (s)', 'Sample Time (s)',
+                    'LED_A_784_DET1', 'LED_A_784_DET2', 'LED_A_784_DET3', 
+                    'LED_A_800_DET1', 'LED_A_800_DET2', 'LED_A_800_DET3', 
+                    'LED_A_818_DET1', 'LED_A_818_DET2', 'LED_A_818_DET3', 
+                    'LED_A_835_DET1', 'LED_A_835_DET2', 'LED_A_835_DET3',
+                    'LED_A_851_DET1', 'LED_A_851_DET2', 'LED_A_851_DET3', 
+                    'LED_A_881_DET1', 'LED_A_881_DET2', 'LED_A_881_DET3', 
+                    'LED_A_DARK_DET1', 'LED_A_DARK_DET2', 'LED_A_DARK_DET3',
+                    'LED_B_784_DET1', 'LED_B_784_DET2', 'LED_B_784_DET3', 
+                    'LED_B_800_DET1', 'LED_B_800_DET2', 'LED_B_800_DET3', 
+                    'LED_B_818_DET1', 'LED_B_818_DET2', 'LED_B_818_DET3', 
+                    'LED_B_835_DET1', 'LED_B_835_DET2', 'LED_B_835_DET3',
+                    'LED_B_851_DET1', 'LED_B_851_DET2', 'LED_B_851_DET3', 
+                    'LED_B_881_DET1', 'LED_B_881_DET2', 'LED_B_881_DET3', 
+                    'LED_B_DARK_DET1', 'LED_B_DARK_DET2', 'LED_B_DARK_DET3']
+        Time = data['Time']
+        
+        # Group mappings
+        GroupA_Detector1 = ['LED_A_784_DET1', 'LED_A_800_DET1', 'LED_A_818_DET1', 'LED_A_835_DET1', 'LED_A_851_DET1', 'LED_A_881_DET1', 'LED_A_DARK_DET1']
+        GroupA_Detector2 = ['LED_A_784_DET2', 'LED_A_800_DET2', 'LED_A_818_DET2', 'LED_A_835_DET2', 'LED_A_851_DET2', 'LED_A_881_DET2', 'LED_A_DARK_DET2']
+        GroupA_Detector3 = ['LED_A_784_DET3', 'LED_A_800_DET3', 'LED_A_818_DET3', 'LED_A_835_DET3', 'LED_A_851_DET3', 'LED_A_881_DET3', 'LED_A_DARK_DET3']
+    
+        GroupB_Detector1 = ['LED_B_784_DET1', 'LED_B_800_DET1', 'LED_B_818_DET1', 'LED_B_835_DET1', 'LED_B_851_DET1', 'LED_B_881_DET1', 'LED_B_DARK_DET1']
+        GroupB_Detector2 = ['LED_B_784_DET2', 'LED_B_800_DET2', 'LED_B_818_DET2', 'LED_B_835_DET2', 'LED_B_851_DET2', 'LED_B_881_DET2', 'LED_B_DARK_DET2']
+        GroupB_Detector3 = ['LED_B_784_DET3', 'LED_B_800_DET3', 'LED_B_818_DET3', 'LED_B_835_DET3', 'LED_B_851_DET3', 'LED_B_881_DET3', 'LED_B_DARK_DET3']
+    
+        return data, Time, GroupA_Detector1, GroupA_Detector2, GroupA_Detector3, GroupB_Detector1, GroupB_Detector2, GroupB_Detector3
+    except Exception as e:
+        print(f"Error reading the file: {e}")
+        return None, None, None, None, None, None, None, None
+
+# Callback to process uploaded files
+@callback(
+    Output('file-names', 'children'),
+    Input('upload-data', 'filename'),
+    Input('upload-data', 'contents')
+)
+def upload_data(filename, contents):
+    if filename and contents:
+        # Decode the uploaded file's contents
+        content_type, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+
+        # Get the file name and prepare the file path
+        directory = "src/uploads"  # Using relative path
+        files = glob.glob(os.path.join(directory, "*"))
+        for f in files:
+            os.remove(f)
+        filepath = os.path.join(directory, filename)
+
+        # Save the file to the system
+        with open(filepath, 'wb') as f:
+            f.write(decoded)
+        print(f"File saved to {filepath}")
+
+        # Read the file using pandas
+        raw_data = read_group_data(filepath)
+        print('raw_data', raw_data)
+        return f'File Uploaded: {filename}'
+    return 'Upload Data'
+
+@callback(
+    Output('download-file-snirf', 'data'),  # Make sure 'data' is the output, not 'contents'
+    Input('btn_rawdata_snirf', 'n_clicks'),
+    Input('upload-data', 'filename'),
+    prevent_initial_call=True
+)
+def rawdata_snirf_download(n_clicks, filename):
+    if n_clicks and filename:
+        print('Button clicked to download')
+        
+        # Generate SNIRF file
+        directory = "src/uploads"  # Path for file
+        filepath = os.path.join(directory, filename)
+        print('filepath', filepath)
+
+        # Assuming snirf_file is a function that returns the file in the required format
+        snirf_file, snirf_file_name = create_snirf(filepath)  # Replace with actual file creation logic
+        return dcc.send_file(snirf_file)
+    return None
+
+@callback(
+    Output('store-file-path', 'data'),
+    Input('upload-data', 'filename'),
+    Input('upload-data', 'contents')
+)
+def store_file_path(filename, contents):
+    if filename and contents:
+        # Decode the uploaded file's contents
+        content_type, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+
+        # Get the file name and prepare the file path
+        directory = "src/uploads"  # Using relative path
+        filepath = os.path.join(directory, filename)
+
+        # Save the file to the system
+        with open(filepath, 'wb') as f:
+            f.write(decoded)
+
+        return filepath
+    return None
+ 
+# Function to create the intensity figure
+def create_intensity_figure(voltages, spectra_list, title, time_unit='ms'):
+    data = []
+    y_max = 0  # Variable to track the maximum y value across all spectra
+    for spectrum in spectra_list:
+        if spectrum in voltages.columns:
+            y = voltages[spectrum].values
+            y_max = max(y_max, max(y, default=0))  # Update y_max if current y has a higher value
+            x = np.arange(len(y))
+            trace = go.Scatter(x=x, y=y, mode='lines', name=spectrum)
+            data.append(trace)
+    
+    layout = go.Layout(
+        title={'text': title, 'font_size': 24},  # Title font size
+        xaxis={'title': f'Time ({time_unit})', 'range': [0, len(x)], 'title_font_size': 20, 'tickfont_size': 20},  # Axis labels and ticks font size
+        yaxis={'title': 'Voltage (V)', 'range': [0, y_max], 'title_font_size': 20, 'tickfont_size': 20},  # Axis labels and ticks font size
+        legend={'font_size': 16},  # Legend font size
+        height=1300
+    )
+    
+    return go.Figure(data=data, layout=layout)
+
+
+
+# Function to calculate Noise Equivalent Power (NEP)
+def calculate_nep(voltages, dark_detectors):
+    nep_values = {}
+    for i, dark_detector in enumerate(dark_detectors):
+        nep_values[f'detector_{i + 1}_nep'] = np.std(voltages[dark_detector])
+    return nep_values
+
+# Helper function to calculate SNR for a signal and its corresponding dark measurement
+def calculate_snr(signal_data, dark_data):
+    if dark_data.size == 0:
+        return 0  # Avoid division by zero if dark_data is empty
+    signal = np.mean(signal_data)
+    dark_mean = np.mean(dark_data)
+    noise = np.std(dark_data)
+    return (signal - dark_mean) / noise  # SNR calculation
+
+# Function to create SNR histogram and bar chart
+def create_snr_histogram(voltages):
+    snr_values = []  # List to store calculated SNR values
+
+    # Define intensity and corresponding dark detectors
+    intensity_detectors = [
+        'LED_A_784_DET1', 'LED_A_784_DET2', 'LED_A_784_DET3', 
+        'LED_A_800_DET1', 'LED_A_800_DET2', 'LED_A_800_DET3', 
+        'LED_A_818_DET1', 'LED_A_818_DET2', 'LED_A_818_DET3', 
+        'LED_A_835_DET1', 'LED_A_835_DET2', 'LED_A_835_DET3',
+        'LED_A_851_DET1', 'LED_A_851_DET2', 'LED_A_851_DET3', 
+        'LED_A_881_DET1', 'LED_A_881_DET2', 'LED_A_881_DET3', 
+        'LED_B_784_DET1', 'LED_B_784_DET2', 'LED_B_784_DET3', 
+        'LED_B_800_DET1', 'LED_B_800_DET2', 'LED_B_800_DET3', 
+        'LED_B_818_DET1', 'LED_B_818_DET2', 'LED_B_818_DET3', 
+        'LED_B_835_DET1', 'LED_B_835_DET2', 'LED_B_835_DET3',
+        'LED_B_851_DET1', 'LED_B_851_DET2', 'LED_B_851_DET3', 
+        'LED_B_881_DET1', 'LED_B_881_DET2', 'LED_B_881_DET3'
+    ]
+    
+    dark_detectors = [
+        'LED_A_DARK_DET1', 'LED_A_DARK_DET2', 'LED_A_DARK_DET3',
+        'LED_B_DARK_DET1', 'LED_B_DARK_DET2', 'LED_B_DARK_DET3'
+    ]
+
+    # Calculate SNR for each intensity detector
+    for i, intensity_detector in enumerate(intensity_detectors):
+        # Corresponding dark detector for each intensity detector
+        dark_detector = dark_detectors[i % 3]  # Choose dark detectors cyclically
+        
+        # Get the intensity and dark data from voltages
+        signal_data = voltages[intensity_detector].values
+        dark_data = voltages[dark_detector].values
+        
+        # Calculate and store SNR value
+        snr = calculate_snr(signal_data, dark_data)
+        snr_values.append(snr)
+
+    # Plot 1: Histogram of SNR for all intensities
+    fig1 = go.Figure(data=[go.Histogram(
+        x=intensity_detectors,  # Set intensity detectors on the x-axis
+        y=snr_values,  # Set the SNR values on the y-axis
+        histfunc='sum',  # Sum the values for each intensity detector
+        nbinsx=30  # You can adjust this to suit your needs
+    )])
+
+    # Update the layout for the histogram plot
+    fig1.update_layout(
+        title="SNR of Intensities",
+        xaxis_title="Intensities (Detector Names)",
+        yaxis_title="SNR",
+        xaxis={'tickangle': 45},  # Rotate x-axis labels for better readability
+        showlegend=False  # Optional: Hide legend as it's not needed for a histogram
+    )
+
+    # Calculate and plot the average SNR for each group
+    groups = {
+        "GroupA_Detector1": ['LED_A_784_DET1', 'LED_A_800_DET1', 'LED_A_818_DET1', 'LED_A_835_DET1', 'LED_A_851_DET1', 'LED_A_881_DET1'],
+        "GroupA_Detector2": ['LED_A_784_DET2', 'LED_A_800_DET2', 'LED_A_818_DET2', 'LED_A_835_DET2', 'LED_A_851_DET2', 'LED_A_881_DET2'],
+        "GroupA_Detector3": ['LED_A_784_DET3', 'LED_A_800_DET3', 'LED_A_818_DET3', 'LED_A_835_DET3', 'LED_A_851_DET3', 'LED_A_881_DET3'],
+        "GroupB_Detector1": ['LED_B_784_DET1', 'LED_B_800_DET1', 'LED_B_818_DET1', 'LED_B_835_DET1', 'LED_B_851_DET1', 'LED_B_881_DET1'],
+        "GroupB_Detector2": ['LED_B_784_DET2', 'LED_B_800_DET2', 'LED_B_818_DET2', 'LED_B_835_DET2', 'LED_B_851_DET2', 'LED_B_881_DET2'],
+        "GroupB_Detector3": ['LED_B_784_DET3', 'LED_B_800_DET3', 'LED_B_818_DET3', 'LED_B_835_DET3', 'LED_B_851_DET3', 'LED_B_881_DET3']
+    }
+
+    group_avg_snr = {}  # Dictionary to store average SNR for each group
+    for group, detectors in groups.items():
+        group_snr_values = []
+        for detector in detectors:
+            # Get the intensity and dark data from voltages
+            signal_data = voltages[detector].values
+            dark_data = voltages[dark_detectors[detectors.index(detector) % len(dark_detectors)]].values
+            group_snr_values.append(calculate_snr(signal_data, dark_data))
+        group_avg_snr[group] = np.mean(group_snr_values)
+
+    # Plot 2: Bar chart for the average SNR of each group
+    fig2 = go.Figure(data=[go.Bar(
+        x=list(group_avg_snr.keys()),
+        y=list(group_avg_snr.values()),
+        name='Average SNR of Groups',
+        marker=dict(color='rgba(255, 99, 132, 0.6)')
+    )])
+
+    # Update the layout for the bar chart plot
+    fig2.update_layout(
+        title="Average SNR of Groups",
+        xaxis_title="Groups",
+        yaxis_title="Average SNR",
+        xaxis={'tickangle': 45},  # Rotate x-axis labels for better readability
+        showlegend=False  # Optional: Hide legend if not needed
+    )
+
+    # Calculate NEP values for each detector
+    nep_values = calculate_nep(voltages, dark_detectors)
+
+    # Plot 3: Bar chart for NEP values
+    nep_fig = go.Figure(data=[go.Bar(
+        x=list(nep_values.keys()),
+        y=list(nep_values.values()),
+        name='NEP of Detectors',
+        marker=dict(color='rgba(99, 255, 132, 0.6)')
+    )])
+
+    # Update the layout for the NEP bar chart
+    nep_fig.update_layout(
+        title="NEP of Detectors",
+        xaxis_title="Detectors",
+        yaxis_title="NEP",
+        xaxis={'tickangle': 45},  # Rotate x-axis labels for better readability
+        showlegend=False  # Optional: Hide legend if not needed
+    )
+
+    # Return all the figures
+    return fig1, fig2, nep_fig
+
+
+@callback(
+    Output('tabs', 'children'),
+    Input('view-graph-btn', 'n_clicks'),
+    Input('check-data-quality-btn', 'n_clicks'),
+    State('groupA_dect1_spectras', 'on'),
+    State('groupA_dect2_spectras', 'on'),
+    State('groupA_dect3_spectras', 'on'),
+    State('groupB_dect1_spectras', 'on'),
+    State('groupB_dect2_spectras', 'on'),
+    State('groupB_dect3_spectras', 'on'),
+    State('select_all_switch', 'on'),
+    State('intensities-options-dropdown', 'value'),
+    State('store-file-path', 'data'),
+    prevent_initial_call=True
+)
+def update_tabs_and_plots(view_intensity_n_clicks, check_data_quality_n_clicks, groupA1_on, groupA2_on, groupA3_on, groupB1_on, groupB2_on, groupB3_on, select_all_on, selected_spectra, filepath):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return []
+
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if button_id == 'view-graph-btn' and filepath:
+        voltages, Time, GroupA_Detector1, GroupA_Detector2, GroupA_Detector3, GroupB_Detector1, GroupB_Detector2, GroupB_Detector3 = read_group_data(filepath)
+        
+        tabs = []
+        if select_all_on:
+            groupA1_on = groupA2_on = groupA3_on = True
+            groupB1_on = groupB2_on = groupB3_on = True
+
+        if groupA1_on:
+            tabs.append(dcc.Tab(label='GroupA_Detector1', value='GroupA_Detector1', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupA_Detector1, 'GroupA_Detector1'))
+            ]))
+        if groupA2_on:
+            tabs.append(dcc.Tab(label='GroupA_Detector2', value='GroupA_Detector2', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupA_Detector2, 'GroupA_Detector2'))
+            ]))
+        if groupA3_on:
+            tabs.append(dcc.Tab(label='GroupA_Detector3', value='GroupA_Detector3', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupA_Detector3, 'GroupA_Detector3'))
+            ]))
+        if groupB1_on:
+            tabs.append(dcc.Tab(label='GroupB_Detector1', value='GroupB_Detector1', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupB_Detector1, 'GroupB_Detector1'))
+            ]))
+        if groupB2_on:
+            tabs.append(dcc.Tab(label='GroupB_Detector2', value='GroupB_Detector2', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupB_Detector2, 'GroupB_Detector2'))
+            ]))
+        if groupB3_on:
+            tabs.append(dcc.Tab(label='GroupB_Detector3', value='GroupB_Detector3', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, GroupB_Detector3, 'GroupB_Detector3'))
+            ]))
+
+        if selected_spectra:
+            tabs.append(dcc.Tab(label='Selected Intensities', value='Selected_Intensities', children=[
+                dcc.Graph(figure=create_intensity_figure(voltages, selected_spectra, 'Selected Intensities'))
+            ]))
+
+        return tabs
+
+    elif check_data_quality_n_clicks and filepath:
+        voltages, Time, GroupA_Detector1, GroupA_Detector2, GroupA_Detector3, GroupB_Detector1, GroupB_Detector2, GroupB_Detector3 = read_group_data(filepath)
+
+        # Create SNR histogram and bar chart figures
+        snr_histogram, snr_bar_chart, nep_fig = create_snr_histogram(voltages)
+
+        # Create a single tab with two rows (first row for histogram, second for bar chart)
+        return [
+            dcc.Tab(
+                label='Check Raw Data Quality',
+                value='check_raw_data_quality',
+                children=[
+                    html.Div(
+                        children=[
+                            # First Row: SNR Histogram
+                            html.Div(
+                                dcc.Graph(figure=snr_histogram),
+                                style={'width': '100%', 'display': 'inline-block', 'margin-bottom': '20px'}
+                            ),
+                            # Second Row: SNR Bar Chart
+                            html.Div(
+                                dcc.Graph(figure=snr_bar_chart),
+                                style={'width': '100%', 'display': 'inline-block'}
+                            ),
+                            # Third Row: NEP Bar Chart
+                        html.Div(
+                            dcc.Graph(figure=nep_fig),
+                            style={'width': '100%', 'display': 'inline-block'}
+                        )
+
+                        ]
+                    )
+                ]
+            )
+        ]
+    
+    return []
+
+if __name__ == '__main__':
+    app.run_server(debug=True) 
