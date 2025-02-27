@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
 class PhantomDataProcessor:
     def formula(self, data):
         # Assuming data is a DataFrame
@@ -165,8 +164,12 @@ class PhantomDataProcessor:
 
         return conc_a_1_df, conc_a_2_df, conc_a_3_df, conc_b_1_df, conc_b_2_df, conc_b_3_df, ext_coeffs_inv, atten_a_1, atten_a_2, atten_a_3, atten_b_1, atten_b_2, atten_b_3, ext_coeffs_inv
 
+#==================================SRS===================================================================================
+
 
 def SRS(atten_a_1, atten_a_2, atten_a_3, atten_b_1, atten_b_2, atten_b_3, ext_coeffs_inv):
+    wavelengths = np.array([784, 800, 818, 835, 851, 881])
+
     Group_A_784 = [atten_a_1['LED_A_784_DET1'], atten_a_2['LED_A_784_DET2'], atten_a_3['LED_A_784_DET3']]
     Group_A_800 = [atten_a_1['LED_A_800_DET1'], atten_a_2['LED_A_800_DET2'], atten_a_3['LED_A_800_DET3']]
     Group_A_818 = [atten_a_1['LED_A_818_DET1'], atten_a_2['LED_A_818_DET2'], atten_a_3['LED_A_818_DET3']]
@@ -180,6 +183,7 @@ def SRS(atten_a_1, atten_a_2, atten_a_3, atten_b_1, atten_b_2, atten_b_3, ext_co
     Group_B_835 = [atten_b_1['LED_B_835_DET1'], atten_b_2['LED_B_835_DET2'], atten_b_3['LED_B_835_DET3']]
     Group_B_851 = [atten_b_1['LED_B_851_DET1'], atten_b_2['LED_B_851_DET2'], atten_b_3['LED_B_851_DET3']]
     Group_B_881 = [atten_b_1['LED_B_881_DET1'], atten_b_2['LED_B_881_DET2'], atten_b_3['LED_B_881_DET3']]
+
 
     detector_A_distance = np.array([[3], [4], [5]])
     detector_B_distance = np.array([[5], [4], [3]])
@@ -274,8 +278,6 @@ def SRS(atten_a_1, atten_a_2, atten_a_3, atten_b_1, atten_b_2, atten_b_3, ext_co
     for x in range(0, len(atten_wldep_B_881[0])):
         m_881_B[0, x], c_881_B[0, x] = np.linalg.lstsq(A_groupB, atten_wldep_B_881[:, x], rcond=None)[0]
 
-    wavelengths = np.array([784, 800, 818, 835, 851, 881])
-
     h = 6.3e-4
     # group A
     k_mua_784_A = (1 / (3 * (1 - (h * wavelengths[0])))) * (np.log(10) * m_784_A - (2 / np.mean(detector_A_distance)))**2
@@ -310,95 +312,60 @@ def SRS(atten_a_1, atten_a_2, atten_a_3, atten_b_1, atten_b_2, atten_b_3, ext_co
     sto2_b = (oxy_b / (oxy_b + deoxy_b)) * 100
 
     return sto2_a, sto2_b
+#==================================Dual Slope===================================================================================
 
-#=============================================================================================================================================
 
-def dual_slope_wavelength(data, wavelengths, LED_A_det_seps, LED_B_det_seps, dsf=8):
-
+def dual_slope_wavelength(data, wavelengths, LED_A_det_seps, LED_B_det_seps, ext_coeffs_inv, dsf=8):
+    ds_mua_results = {}
+    
     for wavelength in wavelengths:
-        col_A_det1 = f'LED_A_{wavelength}_DET1'  # This will correctly resolve for each wavelength
+        col_A_det1 = f'LED_A_{wavelength}_DET1'
         col_A_det3 = f'LED_A_{wavelength}_DET3'
         col_B_det1 = f'LED_B_{wavelength}_DET1'
         col_B_det3 = f'LED_B_{wavelength}_DET3'
-
-    print('col_A_det1', col_A_det1)
-    print('col_A_det3', col_A_det3)
-    print('col_B_det1', col_B_det1)
-
-    # Extract the two-detector data.
-    # For LED A we use [DET1, DET3] while for LED B the order is swapped.
-    LED_A_data = data[[col_A_det1, col_A_det3]].values
-    LED_B_data = data[[col_B_det3, col_B_det1]].values
+        
+        LED_A_data = data[[col_A_det1, col_A_det3]].values
+        LED_B_data = data[[col_B_det3, col_B_det1]].values
+        
+        ss_LED_A = []
+        ss_LED_B = []
+        
+        for row in LED_A_data:
+            num_detectors = len(LED_A_det_seps)
+            avg_det = np.mean(LED_A_det_seps)
+            var_det = np.var(LED_A_det_seps, ddof=1)
+            slope_sum = 0
+            for i in [num_detectors // 2]:
+                r_N = LED_A_det_seps[num_detectors - (i + 1)]
+                r_1 = LED_A_det_seps[i]
+                I_N = row[num_detectors - (i + 1)]
+                I_1 = row[i]
+                log_ratio_r = 2 * np.log(r_N / r_1)
+                log_ratio_I = np.log(I_N / I_1)
+                slope_sum += (r_N - avg_det) * (log_ratio_r + log_ratio_I)
+            ss_LED_A.append(slope_sum / (num_detectors * var_det))
+        
+        for row in LED_B_data:
+            num_detectors = len(LED_B_det_seps)
+            avg_det = np.mean(LED_B_det_seps)
+            var_det = np.var(LED_B_det_seps, ddof=1)
+            slope_sum = 0
+            for i in [num_detectors // 2]:
+                r_N = LED_B_det_seps[num_detectors - (i + 1)]
+                r_1 = LED_B_det_seps[i]
+                I_N = row[num_detectors - (i + 1)]
+                log_ratio_I = np.log(I_N / I_1)
+                slope_sum += (r_N - avg_det) * (log_ratio_r + log_ratio_I)
+            ss_LED_B.append(slope_sum / (num_detectors * var_det))
+        
+        ss_LED_A = np.array(ss_LED_A) / dsf
+        ss_LED_B = np.array(ss_LED_B) / dsf
+        ds_mua_results[wavelength] = -(ss_LED_A + ss_LED_B) / (2 * dsf)
     
-    ss_LED_A = []
-    ss_LED_B = []
-    
-    # Process LED A data.
-    for row in LED_A_data:
-        num_detectors = len(LED_A_det_seps)
-        avg_det = np.mean(LED_A_det_seps)
-        var_det = np.var(LED_A_det_seps, ddof=1)
-        slope_sum = 0
-        # Here we use the mid-index (for 2 detectors, it is a single value)
-        for i in [num_detectors // 2]:
-            r_N = LED_A_det_seps[num_detectors - (i + 1)]
-            r_1 = LED_A_det_seps[i]
-            I_N = row[num_detectors - (i + 1)]
-            I_1 = row[i]
-            log_ratio_r = 2 * np.log(r_N / r_1)
-            log_ratio_I = np.log(I_N / I_1)
-            slope_sum += (r_N - avg_det) * (log_ratio_r + log_ratio_I)
-        ss_LED_A.append(slope_sum / (num_detectors * var_det))
-
-    
-    # Process LED B data.
-    for row in LED_B_data:
-        num_detectors = len(LED_B_det_seps)
-        avg_det = np.mean(LED_B_det_seps)
-        var_det = np.var(LED_B_det_seps, ddof=1)
-        slope_sum = 0
-        for i in [num_detectors // 2]:
-            r_N = LED_B_det_seps[num_detectors - (i + 1)]
-            r_1 = LED_B_det_seps[i]
-            I_N = row[num_detectors - (i + 1)]
-            I_1 = row[i]
-            log_ratio_r = 2 * np.log(r_N / r_1)
-            log_ratio_I = np.log(I_N / I_1)
-            slope_sum += (r_N - avg_det) * (log_ratio_r + log_ratio_I)
-        ss_LED_B.append(slope_sum / (num_detectors * var_det))
-    
-    # Convert lists to arrays.
-    ss_LED_A_array = np.array(ss_LED_A)
-    ss_LED_B_array = np.array(ss_LED_B)
-    
-    ss_LED_A = ss_LED_A_array / dsf
-    ss_LED_B = ss_LED_B_array / dsf
-
-    # Calculate mua using the average of the two slopes.
-    ds_mua = -(ss_LED_A + ss_LED_B) / (2 * dsf)
-    
-    return ds_mua
-
-    # Example usage: calculate dual-slope mua for all wavelengths.
-    wavelengths = [784, 800, 818, 835, 851, 881]
-    # Define the source-detector separations as in your original code.
-    LED_A_det_seps = [3, 5]  # for LED_A_DET1 and LED_A_DET3
-    LED_B_det_seps = [5, 3]  # for LED_B_DET1 and LED_B_DET3
-
-    # Store results in a dictionary.
-    ds_mua_results = {}
-    for wl in wavelengths:
-        ds_mua_results[wl] = dual_slope_wavelength(data, wl, LED_A_det_seps, LED_B_det_seps)
-
-    mua_dual_slope = np.vstack([ds_mua_results[wl] for wl in [784, 800, 818, 835, 851, 881]])
-  
+    mua_dual_slope = np.vstack([ds_mua_results[wl] for wl in wavelengths])
     conc_dual_slope = np.matmul(ext_coeffs_inv, mua_dual_slope)
-
-    # Separate the oxygenated and deoxygenated concentrations.
     oxy_dual_slope = conc_dual_slope[0, :]
     deoxy_dual_slope = conc_dual_slope[1, :]
-
-    # Compute StO2 for each time point.
     sto2_dual_slope = (oxy_dual_slope / (oxy_dual_slope + deoxy_dual_slope)) * 100
 
     return sto2_dual_slope
